@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HRIS Leave System
 
-## Getting Started
+Aplikasi pengelolaan cuti karyawan untuk pengajuan, approval berjenjang, saldo cuti, dan jadwal cuti tim. Aplikasi menyediakan dashboard berdasarkan role, inbox approval, detail approval chain, pengaturan hari libur, dan ekspor rekap CSV untuk HR Admin.
 
-First, run the development server:
+## Tech stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- Prisma ORM
+- PostgreSQL (Neon)
+
+## Arsitektur data
+
+```mermaid
+erDiagram
+  EMPLOYEE ||--o{ LEAVE_REQUEST : submits
+  EMPLOYEE ||--o{ LEAVE_BALANCE : has
+  EMPLOYEE ||--o{ APPROVAL : handles
+  EMPLOYEE o|--o{ EMPLOYEE : manages
+  LEAVE_TYPE ||--o{ LEAVE_REQUEST : categorizes
+  LEAVE_TYPE ||--o{ LEAVE_BALANCE : allocates
+  LEAVE_REQUEST ||--o{ APPROVAL : routes
+
+  EMPLOYEE {
+    string id PK
+    string nik UK
+    string name
+    string email UK
+    string department
+    enum role
+    string managerId FK
+  }
+  LEAVE_REQUEST {
+    string id PK
+    datetime startDate
+    datetime endDate
+    int workingDays
+    string reason
+    enum status
+  }
+  LEAVE_TYPE {
+    string id PK
+    string code UK
+    string name
+    int annualQuota
+  }
+  LEAVE_BALANCE {
+    string id PK
+    int year
+    int used
+    int remaining
+  }
+  APPROVAL {
+    string id PK
+    enum stage
+    enum decision
+    string remarks
+  }
+  HOLIDAY {
+    string id PK
+    date date UK
+    string name
+  }
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Prisma memetakan `LeaveType` ke tabel `leave_types` dan `Holiday` ke tabel `public_holidays`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Aturan bisnis
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Pengajuan baru membutuhkan persetujuan Manajer.
+- Jika pengajuan lebih dari 3 hari kerja, persetujuan HR Admin dibuka setelah Manajer menyetujui.
+- Saldo cuti dikurangi hanya saat tahap approval terakhir menyetujui pengajuan; perubahan status dan saldo dilakukan secara transaksional.
+- Hari kerja tidak menghitung akhir pekan dan hari libur nasional.
+- Pengajuan PENDING dapat dibatalkan oleh pemiliknya.
+- Manager melihat jadwal cuti APPROVED yang sedang berjalan untuk anggota tim langsung. HR Admin melihat jadwal seluruh tim.
+- Hanya HR Admin yang dapat menambahkan hari libur dan mengekspor rekap CSV.
 
-## Learn More
+## Menjalankan lokal
 
-To learn more about Next.js, take a look at the following resources:
+1. Pastikan Node.js 20.19+ tersedia.
+2. Siapkan PostgreSQL lokal atau Neon, lalu isi `.env`:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   ```env
+   DATABASE_URL="postgresql://USER:PASSWORD@HOST/DB?sslmode=require"
+   DATABASE_URL_UNPOOLED="postgresql://USER:PASSWORD@DIRECT_HOST/DB?sslmode=require"
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   Untuk Neon gunakan URL pooled (`-pooler`) pada `DATABASE_URL`, dan URL direct (tanpa `-pooler`) pada `DATABASE_URL_UNPOOLED`. Jangan commit file `.env`.
 
-## Deploy on Vercel
+3. Instal dependensi, terapkan migrasi, dan isi data demo:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   ```bash
+   npm install
+   npx prisma generate
+   npx prisma migrate dev
+   npx prisma db seed
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+4. Jalankan aplikasi:
+
+   ```bash
+   npm run dev
+   ```
+
+   Buka `http://localhost:3000`.
+
+Data demo mencakup karyawan, Manajer, HR Admin, jenis cuti, saldo, dan hari libur. Dropdown **Mode Simulasi** membantu mencoba role yang berbeda; simulasi ini bukan autentikasi untuk produksi.
+
+## API utama
+
+- `GET /api/v1/bootstrap?userId=...`
+- `GET|POST /api/v1/leaves/requests`
+- `PATCH /api/v1/leaves/requests/{id}/cancel`
+- `GET /api/v1/approvals`
+- `GET /api/v1/approvals/team-schedule`
+- `POST /api/v1/approvals/{requestId}/decide`
+- `GET|POST /api/v1/settings/holidays`
+- `GET /api/v1/reports/leaves.csv`
+
+Untuk tes alur terhadap database Neon, jalankan server terlebih dahulu, lalu `npm run test:neon`.

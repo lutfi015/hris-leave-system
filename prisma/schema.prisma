@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum Role {
+  EMPLOYEE
+  MANAGER
+  HR_ADMIN
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalStage {
+  MANAGER
+  HR_ADMIN
+}
+
+enum ApprovalDecision {
+  PENDING
+  APPROVED
+  REJECTED
+  NOT_REQUIRED
+}
+
+model Employee {
+  id                String         @id @default(cuid())
+  name              String
+  nik               String         @unique
+  email             String         @unique
+  jobTitle          String         @default("Karyawan")
+  department        String         @default("Umum")
+  role              Role           @default(EMPLOYEE)
+  managerId         String?
+  manager           Employee?      @relation("ManagerEmployees", fields: [managerId], references: [id])
+  reports           Employee[]     @relation("ManagerEmployees")
+  leaveBalances     LeaveBalance[]
+  requests          LeaveRequest[] @relation("RequestedBy")
+  assignedApprovals Approval[]     @relation("AssignedApprover")
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+model LeaveType {
+  id          String         @id @default(cuid())
+  name        String
+  code        String         @unique
+  annualQuota Int
+  requests    LeaveRequest[]
+  balances    LeaveBalance[]
+
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id          String    @id @default(cuid())
+  employeeId  String
+  leaveTypeId String
+  year        Int
+  used        Int       @default(0)
+  remaining   Int
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([employeeId, leaveTypeId, year])
+}
+
+model LeaveRequest {
+  id          String      @id @default(cuid())
+  employeeId  String
+  leaveTypeId String
+  startDate   DateTime
+  endDate     DateTime
+  workingDays Int
+  reason      String
+  status      LeaveStatus @default(PENDING)
+  employee    Employee    @relation("RequestedBy", fields: [employeeId], references: [id])
+  leaveType   LeaveType   @relation(fields: [leaveTypeId], references: [id])
+  approvals   Approval[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Approval {
+  id         String           @id @default(cuid())
+  requestId  String
+  approverId String
+  stage      ApprovalStage
+  decision   ApprovalDecision @default(PENDING)
+  remarks    String?
+  request    LeaveRequest     @relation(fields: [requestId], references: [id])
+  approver   Employee         @relation("AssignedApprover", fields: [approverId], references: [id])
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([requestId, stage])
+}
+
+model Holiday {
+  id   String   @id @default(cuid())
+  date DateTime @db.Date
+  name String
+
+  @@unique([date])
+  @@map("public_holidays")
+}
